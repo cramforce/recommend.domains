@@ -111,6 +111,7 @@ export async function GET(request: NextRequest) {
       const domainNamesFound: string[] = [];
       const pendingPromises: Promise<void>[] = [];
 
+      let incompleteLine = "";
       readWhile: while (true) {
         const { value, done } = await reader.read();
 
@@ -118,12 +119,23 @@ export async function GET(request: NextRequest) {
           console.log("open ai done");
           break readWhile;
         }
-
-        const lines = textDecoder.decode(value).split(/\n+/);
+        let decoded = textDecoder.decode(value);
+        console.log("openai decoded", decoded);
+        if (!decoded.endsWith("\n")) {
+          console.log("incomplete");
+          incompleteLine += decoded;
+          continue;
+        }
+        decoded = incompleteLine + decoded;
+        incompleteLine = "";
+        const lines = decoded.split(/\n+/);
 
         console.log("openai lines", lines.length);
 
         for (let data of lines) {
+          if (!data.trim()) {
+            continue;
+          }
           data = data.trim().replace(/^data: /, "");
 
           if (data.includes("[DONE]")) {
