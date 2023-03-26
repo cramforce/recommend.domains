@@ -29,6 +29,7 @@ async function getAvailableDomains(domainNames: string[]) {
 
   // If GoDaddy are throttling us then we assume all domains are available
   if (!response.ok) {
+    console.log("GoDaddy not ok", response.status);
     return domainNames.map<Domain>((domainName) => ({
       available: true,
       definitive: false,
@@ -37,6 +38,7 @@ async function getAvailableDomains(domainNames: string[]) {
   }
 
   const availability: { domains: Domain[] } = await response.json();
+  console.log("GoDaddy ok", availability);
 
   return availability.domains.filter((domain) => domain.available);
 }
@@ -66,10 +68,10 @@ async function initialize() {
 const textDecoder = new TextDecoder();
 const textEncoder = new TextEncoder();
 
-export async function POST(request: NextRequest) {
+export async function GET(request: NextRequest) {
   await initialize();
 
-  let { description }: { description: string } = await request.json();
+  let description = "test domain name generator";
 
   // Make sure description is 100 characters or less
   description = description.slice(0, 100);
@@ -99,6 +101,7 @@ export async function POST(request: NextRequest) {
       );
 
       if (response.body === null) {
+        console.log("No body", response.status);
         return;
       }
 
@@ -112,15 +115,19 @@ export async function POST(request: NextRequest) {
         const { value, done } = await reader.read();
 
         if (done) {
+          console.log("open ai done");
           break readWhile;
         }
 
         const lines = textDecoder.decode(value).split(/\n+/);
 
+        console.log("openai lines", lines.length);
+
         for (let data of lines) {
           data = data.trim().replace(/^data: /, "");
 
           if (data.includes("[DONE]")) {
+            console.log("open ai done via message");
             break readWhile;
           }
 
@@ -147,6 +154,7 @@ export async function POST(request: NextRequest) {
               (availableDomains) => {
                 // Return available domains separated by |
                 if (availableDomains.length > 0) {
+                  console.log("controller enqueue", availableDomains);
                   controller.enqueue(
                     textEncoder.encode(
                       availableDomains
@@ -162,6 +170,9 @@ export async function POST(request: NextRequest) {
 
             pendingPromises.push(pendingPromise);
           } catch {
+            if (data) {
+              console.log("Failed to parse", data);
+            }
             // Ignore lines that we fail to parse
           }
         }
@@ -169,11 +180,14 @@ export async function POST(request: NextRequest) {
 
       // Wait for all availability checks to finish
       await Promise.all(pendingPromises);
+      console.log("pendingPromises");
 
       // Wait a bit more for all the chunks to send
       await new Promise((resolve) => setTimeout(resolve, 100));
+      console.log("timeout");
 
       // Close the stream
+      console.log("controller close");
       controller.close();
     },
   });
